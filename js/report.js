@@ -86,7 +86,21 @@ const IncomeReport = (() => {
       .reduce((s, e) => s + e.amount, 0);
   }
 
-  return { parseLocal, monthEntries, monthlyTotal, prevMonth, changeVsPrev, categoryBreakdown, sourceBreakdown, trendData, yearTotal };
+  function fiscalYearTotal(all, refYear, refMonth, fiscalStart) {
+    // fiscalStart: 'MM-DD' (settings.fiscalYearStart). Sums entries in the
+    // fiscal year containing (refYear, refMonth).
+    const m = /^(0[1-9]|1[0-2])-(\d{2})$/.test(fiscalStart || '') ? fiscalStart : '01-01';
+    const startMonth = parseInt(m.slice(0, 2), 10) - 1;
+    const startDay = Math.min(parseInt(m.slice(3, 5), 10), 28);
+    const fyStartYear = refMonth >= startMonth ? refYear : refYear - 1;
+    const start = new Date(fyStartYear, startMonth, startDay);
+    const end = new Date(refYear, refMonth + 1, 0, 23, 59, 59); // end of ref month
+    return all
+      .filter((e) => { const d = parseLocal(e.date); return d >= start && d <= end; })
+      .reduce((s, e) => s + e.amount, 0);
+  }
+
+  return { parseLocal, monthEntries, monthlyTotal, prevMonth, changeVsPrev, categoryBreakdown, sourceBreakdown, trendData, yearTotal, fiscalYearTotal };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = IncomeReport;

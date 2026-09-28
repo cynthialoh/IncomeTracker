@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
+  <a class="skip-link" href="#main">Skip to content</a>
   <!-- OFFLINE BANNER -->
   <div class="offline-banner" id="offlineBanner">📡 You're offline — all data is stored locally on your device</div>
 
@@ -26,29 +27,30 @@
   </header>
 
   <!-- MAIN BODY -->
-  <main class="app-body">
+  <main class="app-body" id="main">
     <!-- TABS -->
-    <div class="tabs" id="tabs">
-      <button class="tab active" data-tab="dashboard">Dashboard</button>
-      <button class="tab" data-tab="entries">Entries</button>
-      <button class="tab" data-tab="categories">Categories</button>
-      <button class="tab" data-tab="reports">Reports</button>
-      <button class="tab" data-tab="settings">Settings</button>
+    <div class="tabs" id="tabs" role="tablist" aria-label="Primary views">
+      <button class="tab active" data-tab="dashboard" role="tab" aria-selected="true">Dashboard</button>
+      <button class="tab" data-tab="entries" role="tab" aria-selected="false">Entries</button>
+      <button class="tab" data-tab="categories" role="tab" aria-selected="false">Categories</button>
+      <button class="tab" data-tab="reports" role="tab" aria-selected="false">Reports</button>
+      <button class="tab" data-tab="settings" role="tab" aria-selected="false">Settings</button>
     </div>
 
     <!-- DASHBOARD TAB -->
-    <section class="tab-section active" id="tab-dashboard">
+    <section class="tab-section active" id="tab-dashboard" role="tabpanel" aria-label="Dashboard">
       <div class="summary-grid" id="summaryGrid"></div>
       <h2 style="font-size: var(--text-lg); font-weight: var(--font-semibold); margin-bottom: var(--space-3);">Recent Income</h2>
       <div id="dashboardEntries"></div>
     </section>
 
     <!-- ENTRIES TAB -->
-    <section class="tab-section" id="tab-entries">
+    <section class="tab-section" id="tab-entries" role="tabpanel" aria-label="Entries">
       <div class="filter-bar">
-        <input type="date" class="input" id="filterDateFrom" />
-        <input type="date" class="input" id="filterDateTo" />
-        <select class="select" id="filterCategory" style="width: auto;">
+        <input type="search" class="input" id="filterSearch" placeholder="Search source or notes" aria-label="Search entries" />
+        <input type="date" class="input" id="filterDateFrom" aria-label="From date" />
+        <input type="date" class="input" id="filterDateTo" aria-label="To date" />
+        <select class="select" id="filterCategory" style="width: auto;" aria-label="Filter by category">
           <option value="">All Categories</option>
         </select>
         <button class="btn btn-secondary btn-sm" id="clearFilters">Clear</button>
@@ -60,12 +62,12 @@
     </section>
 
     <!-- CATEGORIES TAB -->
-    <section class="tab-section" id="tab-categories">
+    <section class="tab-section" id="tab-categories" role="tabpanel" aria-label="Categories">
       <div class="category-grid" id="categoryGrid"></div>
     </section>
 
     <!-- REPORTS TAB -->
-    <section class="tab-section" id="tab-reports">
+    <section class="tab-section" id="tab-reports" role="tabpanel" aria-label="Reports">
       <div class="filter-bar">
         <input type="month" class="input" id="reportMonth" aria-label="Report month" />
         <select class="select" id="trendRange" style="width: auto;" aria-label="Trend range">
@@ -89,7 +91,7 @@
     </section>
 
     <!-- SETTINGS TAB -->
-    <section class="tab-section" id="tab-settings">
+    <section class="tab-section" id="tab-settings" role="tabpanel" aria-label="Settings">
       <div class="card" style="margin-bottom: var(--space-4);">
         <h3 style="font-size: var(--text-lg); font-weight: var(--font-semibold); margin-bottom: var(--space-4);">Currency</h3>
         <div id="settingsCurrencies" style="display: flex; flex-wrap: wrap; gap: var(--space-2);"></div>
@@ -101,6 +103,35 @@
           <button class="btn btn-secondary btn-sm" data-theme-select="light">☀️ Light</button>
           <button class="btn btn-secondary btn-sm" data-theme-select="dark">🌙 Dark</button>
           <button class="btn btn-secondary btn-sm" data-theme-select="system">💻 System</button>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom: var(--space-4);">
+        <h3 style="font-size: var(--text-lg); font-weight: var(--font-semibold); margin-bottom: var(--space-4);">Locale &amp; fiscal year</h3>
+        <div class="form-group">
+          <label class="form-label" for="dateFormat">Date format</label>
+          <select class="select" id="dateFormat">
+            <option value="mdy">Jan 15, 2026</option>
+            <option value="dmy">15 Jan 2026</option>
+            <option value="ymd">2026-01-15</option>
+            <option value="locale">Browser locale</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin-bottom: 0;">
+          <label class="form-label" for="fiscalYearStart">Fiscal year starts</label>
+          <select class="select" id="fiscalYearStart">
+            <option value="01-01">January</option>
+            <option value="02-01">February</option>
+            <option value="03-01">March</option>
+            <option value="04-01">April</option>
+            <option value="05-01">May</option>
+            <option value="06-01">June</option>
+            <option value="07-01">July</option>
+            <option value="08-01">August</option>
+            <option value="09-01">September</option>
+            <option value="10-01">October</option>
+            <option value="11-01">November</option>
+            <option value="12-01">December</option>
+          </select>
         </div>
       </div>
       <div class="card" style="margin-bottom: var(--space-4);">
@@ -123,7 +154,7 @@
 
   <!-- ADD/EDIT MODAL -->
   <div class="modal-overlay" id="entryModal">
-    <div class="modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
       <div class="modal-header">
         <h2 class="modal-title" id="modalTitle">Add Income</h2>
         <button class="modal-close" id="modalClose">✕</button>
@@ -160,7 +191,7 @@
 
   <!-- CONFIRM DIALOG -->
   <div class="confirm-overlay" id="confirmDialog">
-    <div class="confirm-box">
+    <div class="confirm-box" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmMessage">
       <div class="confirm-title" id="confirmTitle">Delete Entry?</div>
       <div class="confirm-message" id="confirmMessage">This action cannot be undone.</div>
       <div class="confirm-actions">
@@ -174,7 +205,7 @@
   <button class="btn-fab" id="fabAdd" aria-label="Add income">+</button>
 
   <!-- TOAST -->
-  <div class="toast" id="toast"></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <!-- IMPORT HIDDEN -->
   <input type="file" id="hiddenImport" accept=".json,.csv" style="display:none;" />

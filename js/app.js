@@ -51,6 +51,7 @@
     let storageWarned = false;
     let editingId = null;
     let confirmCallback = null;
+    let lastFocused = null;
 
     // === STORAGE (Phase B: read-validate-migrate, never wipe entries) ===
     const SCHEMA_VERSION = '2';
@@ -65,7 +66,7 @@
         categories = Array.isArray(parsedCats) && parsedCats.length > 0 ? parsedCats : [...DEFAULT_CATEGORIES];
         const set = localStorage.getItem(STORAGE_KEYS.settings);
         const parsedSettings = set ? JSON.parse(set) : null;
-        settings = Object.assign({ currency: 'USD', theme: 'system' }, parsedSettings || {});
+        settings = Object.assign({ currency: 'USD', theme: 'system', dateFormat: 'mdy', fiscalYearStart: '01-01' }, parsedSettings || {});
         currentCurrency = settings.currency || 'USD';
         if (version !== SCHEMA_VERSION) {
           // Migrate forward without touching entries: backfill new keys, stamp version
@@ -78,7 +79,7 @@
         showToast('Error loading data. Starting fresh.', 'error');
         entries = [];
         categories = [...DEFAULT_CATEGORIES];
-        settings = { currency: 'USD', theme: 'system' };
+        settings = { currency: 'USD', theme: 'system', dateFormat: 'mdy', fiscalYearStart: '01-01' };
       }
     }
 
@@ -175,12 +176,17 @@
     }
 
     function formatDate(dateStr) {
-      const d = new Date(dateStr);
-      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      const d = new Date(dateStr + 'T12:00:00');
+      const fmt = (settings && settings.dateFormat) || 'mdy';
+      if (fmt === 'ymd') return dateStr;
+      if (fmt === 'locale') return d.toLocaleDateString();
+      const parts = { month: 'short', day: 'numeric', year: 'numeric' };
+      if (fmt === 'dmy') return d.toLocaleDateString('en-GB', parts);
+      return d.toLocaleDateString('en-US', parts);
     }
 
     function formatMonthYear(dateStr) {
-      const d = new Date(dateStr);
+      const d = new Date(dateStr + 'T12:00:00');
       return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
     }
 
@@ -280,8 +286,8 @@
           </div>
           <div class="entry-amount" style="color: var(--color-success-500);">${formatCurrency(e.amount, e.currency)}</div>
           <div class="entry-actions">
-            <button onclick="openEditModal('${e.id}')" title="Edit">✏️</button>
-            <button onclick="confirmDelete('${e.id}')" title="Delete">🗑️</button>
+            <button onclick="openEditModal('${e.id}')" title="Edit" aria-label="Edit entry ${escapeHtml(e.source)}">✏️</button>
+            <button onclick="confirmDelete('${e.id}')" title="Delete" aria-label="Delete entry ${escapeHtml(e.source)}">🗑️</button>
           </div>
         </div>`;
       }).join('');
@@ -289,10 +295,12 @@
 
     function renderEntries() {
       let filtered = [...entries];
+      const query = (document.getElementById('filterSearch').value || '').trim().toLowerCase();
       const fromDate = document.getElementById('filterDateFrom').value;
       const toDate = document.getElementById('filterDateTo').value;
       const catFilter = document.getElementById('filterCategory').value;
 
+      if (query) filtered = filtered.filter(e => ((e.source || '') + ' ' + (e.notes || '')).toLowerCase().includes(query));
       if (fromDate) filtered = filtered.filter(e => e.date >= fromDate);
       if (toDate) filtered = filtered.filter(e => e.date <= toDate);
       if (catFilter) filtered = filtered.filter(e => e.category === catFilter);
@@ -382,6 +390,11 @@
           <div class="summary-label">Previous Month</div>
           <div class="summary-value">${formatCurrency(chg.previous, currentCurrency)}</div>
           <div class="summary-sub">${IncomeReport.prevMonth(year, month).month + 1}/${IncomeReport.prevMonth(year, month).year}</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-label">Fiscal YTD</div>
+          <div class="summary-value">${formatCurrency(IncomeReport.fiscalYearTotal(entries, year, month, settings.fiscalYearStart), currentCurrency)}</div>
+          <div class="summary-sub">Since FY start ${settings.fiscalYearStart || '01-01'}</div>
         </div>`;
 
       const cats = IncomeReport.categoryBreakdown(entries, year, month, categories);
@@ -443,6 +456,10 @@
       } else if (pct < 80) {
         storageWarned = false;
       }
+
+      // Locale & fiscal year (Phase E)
+      document.getElementById('dateFormat').value = settings.dateFormat || 'mdy';
+      document.getElementById('fiscalYearStart').value = settings.fiscalYearStart || '01-01';
     }
 
     function setCurrency(currency) {
@@ -480,14 +497,31 @@
     }
 
     // === MODAL ===
+    // === FOCUS MANAGEMENT (Phase E: trap + restore for dialogs) ===
+    function todayLocal() {
+      const d = new Date();
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    }
+
+    function trapTab(overlayId, e) {
+      const overlay = document.getElementById(overlayId);
+      const focusables = overlay.querySelectorAll('button, input, select, [tabindex]:not([tabindex="-1"])');
+      const visible = Array.from(focusables).filter(el => !el.disabled && el.offsetParent !== null);
+      if (visible.length === 0) return;
+      const first = visible[0], last = visible[visible.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+
     function openAddModal() {
+      lastFocused = document.activeElement;
       editingId = null;
       document.getElementById('modalTitle').textContent = 'Add Income';
       document.getElementById('editId').value = '';
       document.getElementById('entryAmount').value = '';
       document.getElementById('entrySource').value = '';
       document.getElementById('entryNotes').value = '';
-      document.getElementById('entryDate').value = new Date().toISOString().split('T')[0];
+      document.getElementById('entryDate').value = todayLocal();
       populateCategorySelect();
       document.getElementById('entryModal').classList.add('active');
       setTimeout(() => document.getElementById('entryAmount').focus(), 100);
@@ -496,6 +530,7 @@
     function openEditModal(id) {
       const entry = entries.find(e => e.id === id);
       if (!entry) return;
+      lastFocused = document.activeElement;
       editingId = id;
       document.getElementById('modalTitle').textContent = 'Edit Income';
       document.getElementById('editId').value = id;
@@ -511,6 +546,8 @@
     function closeModal() {
       document.getElementById('entryModal').classList.remove('active');
       editingId = null;
+      if (lastFocused && document.contains(lastFocused)) lastFocused.focus();
+      lastFocused = null;
     }
 
     function populateCategorySelect(selected) {
@@ -545,6 +582,7 @@
     function confirmDelete(id) {
       const entry = entries.find(e => e.id === id);
       if (!entry) return;
+      lastFocused = document.activeElement;
       document.getElementById('confirmTitle').textContent = 'Delete Entry?';
       document.getElementById('confirmMessage').textContent = `This will permanently delete ${entry.source} (${formatCurrency(entry.amount, entry.currency)}). This cannot be undone.`;
       confirmCallback = () => {
@@ -554,11 +592,14 @@
         closeConfirm();
       };
       document.getElementById('confirmDialog').classList.add('active');
+      setTimeout(() => document.getElementById('confirmOk').focus(), 100);
     }
 
     function closeConfirm() {
       document.getElementById('confirmDialog').classList.remove('active');
       confirmCallback = null;
+      if (lastFocused && document.contains(lastFocused)) lastFocused.focus();
+      lastFocused = null;
     }
 
     // === EXPORT/IMPORT ===
@@ -674,7 +715,11 @@
     // === TABS ===
     function switchTab(tab) {
       currentTab = tab;
-      document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+      document.querySelectorAll('.tab').forEach(t => {
+        const on = t.dataset.tab === tab;
+        t.classList.toggle('active', on);
+        t.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
       document.querySelectorAll('.tab-section').forEach(s => s.classList.toggle('active', s.id === `tab-${tab}`));
       if (tab === 'entries') { entriesLimit = 100; renderEntries(); }
       if (tab === 'categories') renderCategories();
@@ -744,10 +789,12 @@
 
       // Filters
       const resetLimitAndRender = () => { entriesLimit = 100; renderEntries(); };
+      document.getElementById('filterSearch').addEventListener('input', resetLimitAndRender);
       document.getElementById('filterDateFrom').addEventListener('change', resetLimitAndRender);
       document.getElementById('filterDateTo').addEventListener('change', resetLimitAndRender);
       document.getElementById('filterCategory').addEventListener('change', resetLimitAndRender);
       document.getElementById('clearFilters').addEventListener('click', () => {
+        document.getElementById('filterSearch').value = '';
         document.getElementById('filterDateFrom').value = '';
         document.getElementById('filterDateTo').value = '';
         document.getElementById('filterCategory').value = '';
@@ -767,6 +814,20 @@
       document.getElementById('reportMonth').addEventListener('change', renderReports);
       document.getElementById('trendRange').addEventListener('change', renderReports);
 
+      // Locale & fiscal year (Phase E)
+      document.getElementById('dateFormat').addEventListener('change', (e) => {
+        settings.dateFormat = e.target.value;
+        saveSettings();
+        renderAll();
+        showToast('Date format updated', 'success');
+      });
+      document.getElementById('fiscalYearStart').addEventListener('change', (e) => {
+        settings.fiscalYearStart = e.target.value;
+        saveSettings();
+        renderAll();
+        showToast('Fiscal year updated', 'success');
+      });
+
       // Theme toggle
       document.getElementById('themeToggle').addEventListener('click', () => {
         const themes = ['light', 'dark', 'system'];
@@ -784,9 +845,24 @@
       document.getElementById('importData').addEventListener('click', importData);
       document.getElementById('hiddenImport').addEventListener('change', handleImport);
 
-      // Keyboard
+      // Keyboard (Phase E: see docs/keyboard-map.md)
       document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') { closeModal(); closeConfirm(); }
+        if (e.key === 'Escape') { closeModal(); closeConfirm(); return; }
+        if (e.key === 'Tab') {
+          if (document.getElementById('entryModal').classList.contains('active')) { trapTab('entryModal', e); return; }
+          if (document.getElementById('confirmDialog').classList.contains('active')) { trapTab('confirmDialog', e); return; }
+        }
+        const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement && document.activeElement.tagName || '');
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+          e.preventDefault();
+          switchTab('entries');
+          setTimeout(() => document.getElementById('filterSearch').focus(), 50);
+          return;
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'e') { e.preventDefault(); exportJSON(); return; }
+        if ((e.ctrlKey || e.metaKey) && e.key === ',') { e.preventDefault(); switchTab('settings'); return; }
+        if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
+        if (e.key.toLowerCase() === 'n') { e.preventDefault(); openAddModal(); }
       });
 
       // Render

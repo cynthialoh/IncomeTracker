@@ -668,8 +668,24 @@
       margin-bottom: var(--space-3);
     }
 
-    /* === SCREEN-READER ONLY (chart data tables, Phase D) === */
-    .sr-only {
+    /* === SKIP LINK (keyboard users, Phase E) === */
+    .skip-link {
+      position: absolute;
+      left: var(--space-4);
+      top: -48px;
+      z-index: 300;
+      padding: var(--space-2) var(--space-4);
+      background: var(--color-primary-600);
+      color: #FFFFFF;
+      font-size: var(--text-sm);
+      font-weight: var(--font-medium);
+      border-radius: var(--radius-md);
+      text-decoration: none;
+      transition: top 150ms ease;
+    }
+    .skip-link:focus { top: var(--space-2); }
+
+    /* === SCREEN-READER ONLY (chart data tables, Phase D) === */    .sr-only {
       position: absolute;
       width: 1px;
       height: 1px;
