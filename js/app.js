@@ -25,6 +25,7 @@
       entries: 'incomeTracker_entries',
       categories: 'incomeTracker_categories',
       settings: 'incomeTracker_settings',
+      recurring: 'incomeTracker_recurring',
       version: 'incomeTracker_version'
     };
     const DEFAULT_CATEGORIES = [
@@ -43,6 +44,7 @@
     // === STATE ===
     let entries = [];
     let categories = [];
+    let recurringRules = [];
     let settings = {};
     let currentTab = 'dashboard';
     let currentCurrency = 'USD';
@@ -68,11 +70,25 @@
         const parsedSettings = set ? JSON.parse(set) : null;
         settings = Object.assign({ currency: 'USD', theme: 'system', dateFormat: 'mdy', fiscalYearStart: '01-01' }, parsedSettings || {});
         currentCurrency = settings.currency || 'USD';
+        const storedRules = localStorage.getItem(STORAGE_KEYS.recurring);
+        const parsedRules = storedRules ? JSON.parse(storedRules) : null;
+        recurringRules = Array.isArray(parsedRules) ? parsedRules.filter(isValidRule) : [];
         if (version !== SCHEMA_VERSION) {
           // Migrate forward without touching entries: backfill new keys, stamp version
           localStorage.setItem(STORAGE_KEYS.categories, JSON.stringify(categories));
           localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(settings));
+          localStorage.setItem(STORAGE_KEYS.recurring, JSON.stringify(recurringRules));
           localStorage.setItem(STORAGE_KEYS.version, SCHEMA_VERSION);
+        }
+        // Phase F: auto-generate due recurring entries on every launch
+        if (typeof RecurringEngine !== 'undefined' && recurringRules.length > 0) {
+          const result = RecurringEngine.checkAndGenerate(recurringRules, entries, undefined, newId, currentCurrency);
+          recurringRules = result.rules;
+          if (result.generated > 0) {
+            saveEntries();
+            saveRecurring();
+            setTimeout(() => showToast(`Generated ${result.generated} recurring entr${result.generated === 1 ? 'y' : 'ies'}`, 'success'), 500);
+          }
         }
         applyTheme(settings.theme || 'system', true);
       } catch (e) {
@@ -85,6 +101,20 @@
 
     function isValidEntry(e) {
       return e && typeof e.id === 'string' && isFinite(parseFloat(e.amount)) && typeof e.date === 'string';
+    }
+
+    function isValidRule(r) {
+      return r && typeof r.id === 'string' && isFinite(parseFloat(r.amount)) &&
+        typeof r.source === 'string' && typeof r.category === 'string' &&
+        typeof r.frequency === 'string' && typeof r.startDate === 'string';
+    }
+
+    function saveRecurring() {
+      try {
+        localStorage.setItem(STORAGE_KEYS.recurring, JSON.stringify(recurringRules));
+      } catch (e) {
+        showToast('Storage full! Export your data to free space.', 'error');
+      }
     }
 
     function saveEntries() {
@@ -424,6 +454,84 @@
       });
     }
 
+    // === RECURRING RULES (Phase F slice 1) ===
+    const FREQUENCY_LABELS = { daily: 'Daily', weekly: 'Weekly', biweekly: 'Every 2 weeks', monthly: 'Monthly', yearly: 'Yearly' };
+
+    function renderRecurring() {
+      const sel = document.getElementById('ruleCategory');
+      sel.innerHTML = categories.map(c => `<option value="${c.id}">${c.icon} ${c.name}</option>`).join('');
+      const list = document.getElementById('rulesList');
+      if (recurringRules.length === 0) {
+        list.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🔁</div><div class="empty-state-title">No recurring rules</div><p style="font-size: var(--text-sm); color: var(--text-secondary);">Add your salary or subscription above — due entries generate automatically on launch.</p></div>`;
+        return;
+      }
+      list.innerHTML = recurringRules.map(r => {
+        const cat = getCategory(r.category);
+        const next = (typeof RecurringEngine !== 'undefined') ? RecurringEngine.nextOccurrence(r) : null;
+        return `<div class="entry-item" data-id="${r.id}">
+          <div class="entry-icon" style="background: ${cat.color}20; color: ${cat.color};">🔁</div>
+          <div class="entry-details">
+            <div class="entry-source">${escapeHtml(r.source)}</div>
+            <div class="entry-meta">
+              <span class="badge badge-${cat.id}">${cat.name}</span>
+              <span>${FREQUENCY_LABELS[r.frequency] || r.frequency}</span>
+              <span>Next: ${next ? formatDate(next) : '—'}</span>
+            </div>
+          </div>
+          <div class="entry-amount" style="color: var(--color-success-500);">${formatCurrency(r.amount, currentCurrency)}</div>
+          <div class="entry-actions">
+            <button onclick="confirmDeleteRule('${r.id}')" title="Delete rule" aria-label="Delete recurring rule ${escapeHtml(r.source)}">🗑️</button>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    function addRule() {
+      const data = {
+        amount: document.getElementById('ruleAmount').value,
+        source: document.getElementById('ruleSource').value,
+        category: document.getElementById('ruleCategory').value,
+        frequency: document.getElementById('ruleFrequency').value,
+        startDate: document.getElementById('ruleStart').value
+      };
+      const error = (typeof RecurringEngine !== 'undefined')
+        ? RecurringEngine.validateRule(data, categories.map(c => c.id))
+        : 'Recurring engine unavailable';
+      if (error) { showToast(error, 'error'); return; }
+      recurringRules.push({
+        id: newId(),
+        amount: parseFloat(data.amount),
+        source: data.source.trim(),
+        category: data.category,
+        frequency: data.frequency,
+        startDate: data.startDate,
+        lastGenerated: null
+      });
+      saveRecurring();
+      document.getElementById('ruleAmount').value = '';
+      document.getElementById('ruleSource').value = '';
+      document.getElementById('ruleStart').value = todayLocal();
+      showToast('Recurring rule added 🔁', 'success');
+      renderRecurring();
+    }
+
+    function confirmDeleteRule(id) {
+      const rule = recurringRules.find(r => r.id === id);
+      if (!rule) return;
+      lastFocused = document.activeElement;
+      document.getElementById('confirmTitle').textContent = 'Delete Rule?';
+      document.getElementById('confirmMessage').textContent = `Stop auto-generating "${rule.source}" (${FREQUENCY_LABELS[rule.frequency] || rule.frequency})? Past entries are kept.`;
+      confirmCallback = () => {
+        recurringRules = recurringRules.filter(r => r.id !== id);
+        saveRecurring();
+        showToast('Rule deleted', 'success');
+        renderRecurring();
+        closeConfirm();
+      };
+      document.getElementById('confirmDialog').classList.add('active');
+      setTimeout(() => document.getElementById('confirmOk').focus(), 100);
+    }
+
     function renderSettings() {
       // Currency selector
       const cc = document.getElementById('settingsCurrencies');
@@ -724,6 +832,7 @@
       if (tab === 'entries') { entriesLimit = 100; renderEntries(); }
       if (tab === 'categories') renderCategories();
       if (tab === 'reports') renderReports();
+      if (tab === 'recurring') renderRecurring();
       if (tab === 'settings') renderSettings();
       if (tab === 'dashboard') renderDashboard();
     }
@@ -747,6 +856,7 @@
       renderDashboard();
       renderCategories();
       renderEntries();
+      renderRecurring();
       renderSettings();
       // Update filter category dropdown
       const sel = document.getElementById('filterCategory');
@@ -813,6 +923,10 @@
       // Reports
       document.getElementById('reportMonth').addEventListener('change', renderReports);
       document.getElementById('trendRange').addEventListener('change', renderReports);
+
+      // Recurring rules
+      document.getElementById('ruleStart').value = todayLocal();
+      document.getElementById('ruleAdd').addEventListener('click', addRule);
 
       // Locale & fiscal year (Phase E)
       document.getElementById('dateFormat').addEventListener('change', (e) => {

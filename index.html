@@ -34,6 +34,7 @@
       <button class="tab" data-tab="entries" role="tab" aria-selected="false">Entries</button>
       <button class="tab" data-tab="categories" role="tab" aria-selected="false">Categories</button>
       <button class="tab" data-tab="reports" role="tab" aria-selected="false">Reports</button>
+      <button class="tab" data-tab="recurring" role="tab" aria-selected="false">Recurring</button>
       <button class="tab" data-tab="settings" role="tab" aria-selected="false">Settings</button>
     </div>
 
@@ -88,6 +89,42 @@
         <h3>By Source</h3>
         <div id="reportSources"></div>
       </div>
+    </section>
+
+    <!-- RECURRING TAB -->
+    <section class="tab-section" id="tab-recurring" role="tabpanel" aria-label="Recurring">
+      <div class="card" style="margin-bottom: var(--space-4);">
+        <h3 style="font-size: var(--text-lg); font-weight: var(--font-semibold); margin-bottom: var(--space-4);">New recurring rule</h3>
+        <div class="form-group">
+          <label class="form-label" for="ruleAmount">Amount</label>
+          <input type="number" class="input" id="ruleAmount" placeholder="0.00" step="0.01" min="0" />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="ruleSource">Source</label>
+          <input type="text" class="input" id="ruleSource" placeholder="e.g., Salary, Patreon" />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="ruleCategory">Category</label>
+          <select class="select" id="ruleCategory"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="ruleFrequency">Frequency</label>
+          <select class="select" id="ruleFrequency">
+            <option value="monthly">Monthly</option>
+            <option value="weekly">Weekly</option>
+            <option value="biweekly">Every 2 weeks</option>
+            <option value="daily">Daily</option>
+            <option value="yearly">Yearly</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="ruleStart">Starts</label>
+          <input type="date" class="input" id="ruleStart" />
+        </div>
+        <button class="btn btn-primary" id="ruleAdd">Add rule</button>
+      </div>
+      <h2 style="font-size: var(--text-lg); font-weight: var(--font-semibold); margin-bottom: var(--space-3);">Active rules</h2>
+      <div class="entry-list" id="rulesList"></div>
     </section>
 
     <!-- SETTINGS TAB -->
@@ -214,6 +251,7 @@
 
   <script src="js/report.js" defer></script>
   <script src="js/charts.js" defer></script>
+  <script src="js/recurring.js" defer></script>
   <script src="js/app.js" defer></script>
 </body>
 </html>
