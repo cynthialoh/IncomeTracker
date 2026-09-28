@@ -173,6 +173,14 @@
         </div>
       </div>
       <div class="card" style="margin-bottom: var(--space-4);">
+        <h3 style="font-size: var(--text-lg); font-weight: var(--font-semibold); margin-bottom: var(--space-4);">Goals</h3>
+        <div class="form-group">
+          <label class="form-label" for="goalMonthly">Monthly income target (leave empty for none)</label>
+          <input type="number" class="input" id="goalMonthly" placeholder="e.g., 5000" step="0.01" min="0" />
+        </div>
+        <div id="goalCategories"></div>
+      </div>
+      <div class="card" style="margin-bottom: var(--space-4);">
         <h3 style="font-size: var(--text-lg); font-weight: var(--font-semibold); margin-bottom: var(--space-4);">Data</h3>
         <div style="display: flex; gap: var(--space-2); flex-wrap: wrap;">
           <button class="btn btn-secondary btn-sm" id="exportJson">📄 Export JSON</button>

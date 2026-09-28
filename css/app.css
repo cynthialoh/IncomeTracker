@@ -789,5 +789,22 @@
       border-radius: var(--radius-full);
     }
     .bar-val { font-family: var(--font-mono); color: var(--text-secondary); white-space: nowrap; }
+
+    /* === GOAL PROGRESS (Phase F slice 2) === */
+    .progress-track {
+      height: 8px;
+      background: var(--bg-tertiary);
+      border-radius: var(--radius-full);
+      overflow: hidden;
+      margin-top: var(--space-2);
+    }
+    .progress-fill {
+      display: block;
+      height: 100%;
+      background: var(--color-primary-500);
+      border-radius: var(--radius-full);
+      transition: width 300ms ease;
+    }
+    .progress-fill.reached { background: var(--color-success-500); }
     .storage-warn { color: var(--color-warning-600, #D97706); font-weight: var(--font-medium); }
     .show-more-wrap { text-align: center; margin-top: var(--space-4); }

@@ -26,6 +26,7 @@
       categories: 'incomeTracker_categories',
       settings: 'incomeTracker_settings',
       recurring: 'incomeTracker_recurring',
+      goals: 'incomeTracker_goals',
       version: 'incomeTracker_version'
     };
     const DEFAULT_CATEGORIES = [
@@ -45,6 +46,7 @@
     let entries = [];
     let categories = [];
     let recurringRules = [];
+    let goals = { monthly: 0, byCategory: {} };
     let settings = {};
     let currentTab = 'dashboard';
     let currentCurrency = 'USD';
@@ -73,11 +75,14 @@
         const storedRules = localStorage.getItem(STORAGE_KEYS.recurring);
         const parsedRules = storedRules ? JSON.parse(storedRules) : null;
         recurringRules = Array.isArray(parsedRules) ? parsedRules.filter(isValidRule) : [];
+        const storedGoals = localStorage.getItem(STORAGE_KEYS.goals);
+        goals = sanitizeGoals(storedGoals ? JSON.parse(storedGoals) : null);
         if (version !== SCHEMA_VERSION) {
           // Migrate forward without touching entries: backfill new keys, stamp version
           localStorage.setItem(STORAGE_KEYS.categories, JSON.stringify(categories));
           localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(settings));
           localStorage.setItem(STORAGE_KEYS.recurring, JSON.stringify(recurringRules));
+          localStorage.setItem(STORAGE_KEYS.goals, JSON.stringify(goals));
           localStorage.setItem(STORAGE_KEYS.version, SCHEMA_VERSION);
         }
         // Phase F: auto-generate due recurring entries on every launch
@@ -96,6 +101,7 @@
         entries = [];
         categories = [...DEFAULT_CATEGORIES];
         settings = { currency: 'USD', theme: 'system', dateFormat: 'mdy', fiscalYearStart: '01-01' };
+        goals = { monthly: 0, byCategory: {} };
       }
     }
 
@@ -112,6 +118,26 @@
     function saveRecurring() {
       try {
         localStorage.setItem(STORAGE_KEYS.recurring, JSON.stringify(recurringRules));
+      } catch (e) {
+        showToast('Storage full! Export your data to free space.', 'error');
+      }
+    }
+
+    function sanitizeGoals(g) {
+      const out = { monthly: 0, byCategory: {} };
+      if (!g || typeof g !== 'object') return out;
+      if (isFinite(parseFloat(g.monthly)) && parseFloat(g.monthly) > 0) out.monthly = parseFloat(g.monthly);
+      if (g.byCategory && typeof g.byCategory === 'object') {
+        Object.keys(g.byCategory).forEach(k => {
+          if (isFinite(parseFloat(g.byCategory[k])) && parseFloat(g.byCategory[k]) > 0) out.byCategory[k] = parseFloat(g.byCategory[k]);
+        });
+      }
+      return out;
+    }
+
+    function saveGoals() {
+      try {
+        localStorage.setItem(STORAGE_KEYS.goals, JSON.stringify(goals));
       } catch (e) {
         showToast('Storage full! Export your data to free space.', 'error');
       }
@@ -245,8 +271,27 @@
       const changePct = lastMonthTotal > 0 ? ((total - lastMonthTotal) / lastMonthTotal * 100) : 0;
       const isUp = changePct >= 0;
 
-      // Summary cards
-      document.getElementById('summaryGrid').innerHTML = `
+      // Summary cards (goal card first when a target exists)
+      let goalCard = '';
+      if (goals.monthly > 0) {
+        const pct = Math.min((total / goals.monthly) * 100, 100);
+        const reached = total >= goals.monthly;
+        goalCard = `
+        <div class="summary-card">
+          <div class="summary-label">Monthly Goal</div>
+          <div class="summary-value">${pct.toFixed(0)}%</div>
+          <div class="progress-track" role="img" aria-label="Monthly goal progress: ${pct.toFixed(0)} percent of ${formatCurrency(goals.monthly, currentCurrency)}"><span class="progress-fill${reached ? ' reached' : ''}" style="width: ${pct.toFixed(1)}%"></span></div>
+          <div class="summary-sub">${formatCurrency(total, currentCurrency)} of ${formatCurrency(goals.monthly, currentCurrency)}${reached ? ' — goal reached 🎉' : ''}</div>
+        </div>`;
+      } else {
+        goalCard = `
+        <div class="summary-card">
+          <div class="summary-label">Monthly Goal</div>
+          <div class="summary-value" style="color: var(--text-tertiary);">—</div>
+          <div class="summary-sub"><button class="btn btn-secondary btn-sm" onclick="switchTab('settings')">Set a goal</button></div>
+        </div>`;
+      }
+      document.getElementById('summaryGrid').innerHTML = goalCard + `
         <div class="summary-card">
           <div class="summary-label">Total Income</div>
           <div class="summary-value" style="color: var(--color-success-500);">${formatCurrency(total, currentCurrency)}</div>
@@ -358,11 +403,14 @@
       grid.innerHTML = categories.map(cat => {
         const catEntries = monthEntries.filter(e => e.category === cat.id);
         const total = catEntries.reduce((s, e) => s + e.amount, 0);
+        const target = goals.byCategory[cat.id] || 0;
+        const bar = target > 0 ? `<div class="progress-track" role="img" aria-label="${cat.name} goal: ${Math.min((total / target) * 100, 100).toFixed(0)} percent"><span class="progress-fill${total >= target ? ' reached' : ''}" style="width: ${Math.min((total / target) * 100, 100).toFixed(1)}%"></span></div>` : '';
         return `<div class="category-card" onclick="filterByCategory('${cat.id}')">
           <div class="category-icon">${cat.icon}</div>
           <div class="category-name">${cat.name}</div>
           <div class="category-total" style="color: ${cat.color};">${formatCurrency(total, currentCurrency)}</div>
-          <div style="font-size: var(--text-xs); color: var(--text-tertiary);">${catEntries.length} entr${catEntries.length === 1 ? 'y' : 'ies'}</div>
+          ${bar}
+          <div style="font-size: var(--text-xs); color: var(--text-tertiary);">${catEntries.length} entr${catEntries.length === 1 ? 'y' : 'ies'}${target > 0 ? ' · goal ' + formatCurrency(target, currentCurrency) : ''}</div>
         </div>`;
       }).join('');
     }
@@ -568,6 +616,22 @@
       // Locale & fiscal year (Phase E)
       document.getElementById('dateFormat').value = settings.dateFormat || 'mdy';
       document.getElementById('fiscalYearStart').value = settings.fiscalYearStart || '01-01';
+
+      // Goals (Phase F slice 2)
+      document.getElementById('goalMonthly').value = goals.monthly > 0 ? goals.monthly : '';
+      document.getElementById('goalCategories').innerHTML = categories.map(c =>
+        `<div class="form-group"><label class="form-label" for="goal-cat-${c.id}">${c.icon} ${c.name} target</label>` +
+        `<input type="number" class="input goal-cat-input" id="goal-cat-${c.id}" data-cat="${c.id}" placeholder="No target" step="0.01" min="0" value="${goals.byCategory[c.id] || ''}" /></div>`
+      ).join('');
+      document.querySelectorAll('.goal-cat-input').forEach(input => {
+        input.addEventListener('change', () => {
+          const v = parseFloat(input.value);
+          if (isFinite(v) && v > 0) goals.byCategory[input.dataset.cat] = v;
+          else delete goals.byCategory[input.dataset.cat];
+          saveGoals();
+          renderAll();
+        });
+      });
     }
 
     function setCurrency(currency) {
@@ -929,8 +993,7 @@
       document.getElementById('ruleAdd').addEventListener('click', addRule);
 
       // Locale & fiscal year (Phase E)
-      document.getElementById('dateFormat').addEventListener('change', (e) => {
-        settings.dateFormat = e.target.value;
+      document.getElementById('dateFormat').addEventListener('change', (e) => {        settings.dateFormat = e.target.value;
         saveSettings();
         renderAll();
         showToast('Date format updated', 'success');
@@ -940,6 +1003,15 @@
         saveSettings();
         renderAll();
         showToast('Fiscal year updated', 'success');
+      });
+
+      // Monthly goal (Phase F slice 2)
+      document.getElementById('goalMonthly').addEventListener('change', (e) => {
+        const v = parseFloat(e.target.value);
+        goals.monthly = (isFinite(v) && v > 0) ? v : 0;
+        saveGoals();
+        renderAll();
+        showToast(goals.monthly > 0 ? 'Monthly goal saved' : 'Monthly goal cleared', 'success');
       });
 
       // Theme toggle
