@@ -737,6 +737,8 @@ class RecurringEngine {
 | gift | Gift | #F59E0B | 4 |
 | other | Other | #6B7280 | 5 |
 
+> **Note (Phase A decision):** Pink (`#EC4899`, `--color-cat-pink`) is an **accent reserved for user-created custom categories and highlights** — it is NOT a 6th default category. The 5 defaults above are the only pre-populated categories.
+
 ### 7.2 Supported Currencies (ISO 4217)
 USD, EUR, GBP, CAD, AUD, JPY, CHF, CNY, INR, BRL, MXN, KRW, SGD, HKD, NZD, SEK, NOK, DKK, PLN, CZK
 
