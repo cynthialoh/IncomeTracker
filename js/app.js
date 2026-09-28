@@ -34,8 +34,11 @@
       { id: 'gift', name: 'Gift', color: '#F59E0B', icon: '🎁', isDefault: true, order: 4 },
       { id: 'other', name: 'Other', color: '#6B7280', icon: '📋', isDefault: true, order: 5 }
     ];
-    const CURRENCIES = ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY', 'CHF', 'INR', 'BRL'];
-    const CURRENCY_SYMBOLS = { USD: '$', EUR: '€', GBP: '£', CAD: 'C$', AUD: 'A$', JPY: '¥', CHF: 'Fr', INR: '₹', BRL: 'R$' };
+    const CURRENCIES = ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY', 'CHF', 'CNY', 'INR', 'BRL', 'MXN', 'KRW', 'SGD', 'HKD', 'NZD', 'SEK', 'NOK', 'DKK', 'PLN', 'CZK'];
+    function newId() {
+      if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+      return Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+    }
 
     // === STATE ===
     let entries = [];
@@ -43,6 +46,7 @@
     let settings = {};
     let currentTab = 'dashboard';
     let currentCurrency = 'USD';
+    let sortDesc = true;
     let editingId = null;
     let confirmCallback = null;
 
@@ -89,17 +93,35 @@
     }
 
     function saveCategories() {
-      localStorage.setItem(STORAGE_KEYS.categories, JSON.stringify(categories));
+      try {
+        localStorage.setItem(STORAGE_KEYS.categories, JSON.stringify(categories));
+      } catch (e) {
+        showToast('Storage full! Export your data to free space.', 'error');
+      }
     }
 
     function saveSettings() {
-      localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(settings));
+      try {
+        localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(settings));
+      } catch (e) {
+        showToast('Storage full! Export your data to free space.', 'error');
+      }
+    }
+
+    // === VALIDATION (Phase C) ===
+    function validateEntryData(data) {
+      const amount = parseFloat(data.amount);
+      if (!isFinite(amount) || amount <= 0) return 'Please enter a valid amount';
+      if (!data.source || !data.source.trim()) return 'Please enter a source';
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(data.date || '') || isNaN(new Date(data.date + 'T12:00:00').getTime())) return 'Please select a valid date';
+      if (!categories.some(c => c.id === data.category)) return 'Please select a valid category';
+      return null;
     }
 
     // === CRUD ===
     function addEntry(data) {
       const entry = {
-        id: Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
+        id: newId(),
         amount: parseFloat(data.amount),
         currency: currentCurrency,
         source: data.source.trim(),
@@ -132,10 +154,22 @@
       saveEntries();
     }
 
-    // === FORMATTING ===
+    // === FORMATTING (Phase C: locale-aware via Intl, PRD 2.1) ===
     function formatCurrency(amount, currency) {
-      const symbol = CURRENCY_SYMBOLS[currency] || '$';
-      return symbol + amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const code = CURRENCIES.includes(currency) ? currency : 'USD';
+      try {
+        return new Intl.NumberFormat(navigator.language || 'en-US', { style: 'currency', currency: code }).format(amount);
+      } catch (e) {
+        return code + ' ' + Number(amount).toFixed(2);
+      }
+    }
+
+    function getCurrencySymbol(code) {
+      try {
+        const part = new Intl.NumberFormat(navigator.language || 'en-US', { style: 'currency', currency: code }).formatToParts(0).find(p => p.type === 'currency');
+        if (part) return part.value;
+      } catch (e) { /* fall through */ }
+      return code;
     }
 
     function formatDate(dateStr) {
@@ -261,7 +295,9 @@
       if (toDate) filtered = filtered.filter(e => e.date <= toDate);
       if (catFilter) filtered = filtered.filter(e => e.category === catFilter);
 
-      filtered.sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+      filtered.sort((a, b) => sortDesc
+        ? (b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
+        : (a.date.localeCompare(b.date) || a.id.localeCompare(b.id)));
 
       document.getElementById('entriesCount').textContent = `${filtered.length} entr${filtered.length === 1 ? 'y' : 'ies'}`;
       document.getElementById('entriesList').innerHTML = renderEntryList(filtered, true);
@@ -402,11 +438,9 @@
       const date = document.getElementById('entryDate').value;
       const notes = document.getElementById('entryNotes').value;
 
-      if (!amount || parseFloat(amount) <= 0) { showToast('Please enter a valid amount', 'error'); return; }
-      if (!source.trim()) { showToast('Please enter a source', 'error'); return; }
-      if (!date) { showToast('Please select a date', 'error'); return; }
-
       const data = { amount, source, category, date, notes };
+      const error = validateEntryData(data);
+      if (error) { showToast(error, 'error'); return; }
       if (editingId) {
         updateEntry(editingId, data);
         showToast('Entry updated', 'success');
@@ -445,10 +479,36 @@
       showToast('JSON exported!', 'success');
     }
 
+    // === CSV (Phase C: RFC-4180 quoting; commas/quotes/newlines safe) ===
+    function csvEscape(field) {
+      const s = String(field == null ? '' : field);
+      return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    }
+
+    function parseCSVLine(line) {
+      const fields = [];
+      let cur = '', inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (inQuotes) {
+          if (ch === '"') {
+            if (line[i + 1] === '"') { cur += '"'; i++; }
+            else { inQuotes = false; }
+          } else { cur += ch; }
+        } else {
+          if (ch === '"') { inQuotes = true; }
+          else if (ch === ',') { fields.push(cur); cur = ''; }
+          else { cur += ch; }
+        }
+      }
+      fields.push(cur);
+      return fields;
+    }
+
     function exportCSV() {
       let csv = 'Date,Source,Category,Amount,Currency,Notes\n';
       entries.forEach(e => {
-        csv += `${e.date},"${e.source}","${e.category}",${e.amount},${e.currency},"${e.notes}"\n`;
+        csv += [e.date, e.source, e.category, e.amount, e.currency, e.notes || ''].map(csvEscape).join(',') + '\n';
       });
       downloadFile(csv, `income-tracker-${new Date().toISOString().split('T')[0]}.csv`, 'text/csv');
       showToast('CSV exported!', 'success');
@@ -477,38 +537,41 @@
           if (file.name.endsWith('.json')) {
             const data = JSON.parse(content);
             if (data.entries && Array.isArray(data.entries)) {
-              entries = data.entries;
+              const valid = data.entries.filter(isValidEntry);
+              const skipped = data.entries.length - valid.length;
+              entries = valid;
               if (data.categories) { categories = data.categories; saveCategories(); }
               if (data.settings) { settings = data.settings; currentCurrency = settings.currency || 'USD'; saveSettings(); }
               saveEntries();
-              showToast(`Imported ${data.entries.length} entries!`, 'success');
+              showToast(skipped > 0 ? `Imported ${valid.length} entries (${skipped} invalid skipped)!` : `Imported ${valid.length} entries!`, 'success');
               renderAll();
             } else {
               showToast('Invalid JSON format', 'error');
             }
           } else if (file.name.endsWith('.csv')) {
-            const lines = content.trim().split('\n').slice(1);
-            let count = 0;
+            const lines = content.replace(/\r\n/g, '\n').trim().split('\n').slice(1);
+            let count = 0, skipped = 0;
             lines.forEach(line => {
-              const parts = line.split(',');
-              if (parts.length >= 4) {
-                const entry = {
-                  id: Date.now().toString(36) + Math.random().toString(36).substr(2, 5) + count,
-                  amount: parseFloat(parts[3]),
-                  currency: parts[4] || currentCurrency,
-                  source: parts[1].replace(/"/g, ''),
-                  category: parts[2].replace(/"/g, ''),
-                  date: parts[0],
-                  notes: parts[5] ? parts[5].replace(/"/g, '') : '',
-                  createdAt: new Date().toISOString(),
-                  updatedAt: new Date().toISOString()
-                };
-                entries.push(entry);
-                count++;
-              }
+              if (!line.trim()) return;
+              const parts = parseCSVLine(line);
+              if (parts.length < 4) { skipped++; return; }
+              const candidate = {
+                id: newId(),
+                amount: parseFloat(parts[3]),
+                currency: CURRENCIES.includes(parts[4]) ? parts[4] : currentCurrency,
+                source: (parts[1] || '').trim(),
+                category: categories.some(c => c.id === parts[2]) ? parts[2] : 'other',
+                date: parts[0],
+                notes: parts[5] || '',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+              };
+              if (validateEntryData({ amount: candidate.amount, source: candidate.source, category: candidate.category, date: candidate.date })) { skipped++; return; }
+              entries.push(candidate);
+              count++;
             });
             saveEntries();
-            showToast(`Imported ${count} entries!`, 'success');
+            showToast(skipped > 0 ? `Imported ${count} entries (${skipped} rows skipped)` : `Imported ${count} entries!`, skipped > 0 ? '' : 'success');
             renderAll();
           }
         } catch (err) {
@@ -559,7 +622,7 @@
       sel.value = currentVal;
       updateThemeIcon();
       // Update currency display
-      document.getElementById('currencySelector').innerHTML = CURRENCY_SYMBOLS[currentCurrency] || currentCurrency;
+      document.getElementById('currencySelector').innerHTML = getCurrencySymbol(currentCurrency);
     }
 
     // === INIT ===
@@ -597,6 +660,11 @@
         document.getElementById('filterDateFrom').value = '';
         document.getElementById('filterDateTo').value = '';
         document.getElementById('filterCategory').value = '';
+        renderEntries();
+      });
+      document.getElementById('sortToggle').addEventListener('click', (e) => {
+        sortDesc = !sortDesc;
+        e.currentTarget.textContent = sortDesc ? '↓ Newest' : '↑ Oldest';
         renderEntries();
       });
 
