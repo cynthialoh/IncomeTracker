@@ -32,6 +32,7 @@
       <button class="tab active" data-tab="dashboard">Dashboard</button>
       <button class="tab" data-tab="entries">Entries</button>
       <button class="tab" data-tab="categories">Categories</button>
+      <button class="tab" data-tab="reports">Reports</button>
       <button class="tab" data-tab="settings">Settings</button>
     </div>
 
@@ -55,11 +56,36 @@
       </div>
       <div class="entries-count" id="entriesCount"></div>
       <div class="entry-list" id="entriesList"></div>
+      <div class="show-more-wrap"><button class="btn btn-secondary btn-sm" id="showMore" style="display: none;">Show more</button></div>
     </section>
 
     <!-- CATEGORIES TAB -->
     <section class="tab-section" id="tab-categories">
       <div class="category-grid" id="categoryGrid"></div>
+    </section>
+
+    <!-- REPORTS TAB -->
+    <section class="tab-section" id="tab-reports">
+      <div class="filter-bar">
+        <input type="month" class="input" id="reportMonth" aria-label="Report month" />
+        <select class="select" id="trendRange" style="width: auto;" aria-label="Trend range">
+          <option value="6">Last 6 months</option>
+          <option value="12">Last 12 months</option>
+        </select>
+      </div>
+      <div class="summary-grid" id="reportSummary"></div>
+      <div class="card report-card">
+        <h3>By Category</h3>
+        <div id="reportCategories"></div>
+      </div>
+      <div class="card report-card">
+        <h3>Trend</h3>
+        <div id="reportTrend"></div>
+      </div>
+      <div class="card report-card">
+        <h3>By Source</h3>
+        <div id="reportSources"></div>
+      </div>
     </section>
 
     <!-- SETTINGS TAB -->
@@ -155,6 +181,8 @@
 
   <!-- SERVICE WORKER FOR OFFLINE-FIRST (see sw.js) -->
 
+  <script src="js/report.js" defer></script>
+  <script src="js/charts.js" defer></script>
   <script src="js/app.js" defer></script>
 </body>
 </html>

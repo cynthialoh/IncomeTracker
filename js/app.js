@@ -47,6 +47,8 @@
     let currentTab = 'dashboard';
     let currentCurrency = 'USD';
     let sortDesc = true;
+    let entriesLimit = 100;
+    let storageWarned = false;
     let editingId = null;
     let confirmCallback = null;
 
@@ -300,7 +302,15 @@
         : (a.date.localeCompare(b.date) || a.id.localeCompare(b.id)));
 
       document.getElementById('entriesCount').textContent = `${filtered.length} entr${filtered.length === 1 ? 'y' : 'ies'}`;
-      document.getElementById('entriesList').innerHTML = renderEntryList(filtered, true);
+      const visible = filtered.slice(0, entriesLimit);
+      document.getElementById('entriesList').innerHTML = renderEntryList(visible, true);
+      const more = document.getElementById('showMore');
+      if (filtered.length > visible.length) {
+        more.style.display = '';
+        more.textContent = `Show more (${filtered.length - visible.length} remaining)`;
+      } else {
+        more.style.display = 'none';
+      }
     }
 
     // === CATEGORIES ===
@@ -334,6 +344,73 @@
     }
 
     // === SETTINGS ===
+    // === REPORTS (Phase D: PRD Phase 2 visualization) ===
+    function currentReportPeriod() {
+      const val = document.getElementById('reportMonth').value;
+      if (/^\d{4}-\d{2}$/.test(val)) {
+        return { year: parseInt(val.slice(0, 4), 10), month: parseInt(val.slice(5, 7), 10) - 1 };
+      }
+      const now = new Date();
+      return { year: now.getFullYear(), month: now.getMonth() };
+    }
+
+    function renderReports() {
+      if (typeof IncomeReport === 'undefined' || typeof IncomeCharts === 'undefined') return;
+      const monthInput = document.getElementById('reportMonth');
+      if (!monthInput.value) {
+        const now = new Date();
+        monthInput.value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+      }
+      const { year, month } = currentReportPeriod();
+      const trendMonths = parseInt(document.getElementById('trendRange').value, 10) || 6;
+
+      const summary = IncomeReport.monthlyTotal(entries, year, month);
+      const chg = IncomeReport.changeVsPrev(entries, year, month);
+      const isUp = chg.pct >= 0;
+      document.getElementById('reportSummary').innerHTML = `
+        <div class="summary-card">
+          <div class="summary-label">Total Income</div>
+          <div class="summary-value" style="color: var(--color-success-500);">${formatCurrency(summary.total, currentCurrency)}</div>
+          <div class="summary-sub">${isUp ? '↑' : '↓'} ${Math.abs(chg.pct).toFixed(1)}% vs previous month</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-label">Entries</div>
+          <div class="summary-value">${summary.count}</div>
+          <div class="summary-sub">Avg ${formatCurrency(summary.avg, currentCurrency)} per entry</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-label">Previous Month</div>
+          <div class="summary-value">${formatCurrency(chg.previous, currentCurrency)}</div>
+          <div class="summary-sub">${IncomeReport.prevMonth(year, month).month + 1}/${IncomeReport.prevMonth(year, month).year}</div>
+        </div>`;
+
+      const cats = IncomeReport.categoryBreakdown(entries, year, month, categories);
+      document.getElementById('reportCategories').innerHTML =
+        IncomeCharts.donut(cats, currentCurrency, { label: 'Income by category' }) +
+        IncomeCharts.legend(cats, currentCurrency) +
+        IncomeCharts.dataTable('Income by category',
+          ['Category', 'Total', 'Share'],
+          cats.map(c => [c.name, formatCurrency(c.total, currentCurrency), c.pct.toFixed(1) + '%']));
+
+      const trend = IncomeReport.trendData(entries, trendMonths, new Date(year, month, 1));
+      document.getElementById('reportTrend').innerHTML =
+        IncomeCharts.line(trend, currentCurrency, { label: 'Income trend' }) +
+        IncomeCharts.dataTable('Income trend',
+          ['Month', 'Total'],
+          trend.map(t => [t.key, formatCurrency(t.total, currentCurrency)]));
+
+      const srcs = IncomeReport.sourceBreakdown(entries, year, month);
+      document.getElementById('reportSources').innerHTML =
+        IncomeCharts.bars(srcs, currentCurrency, 'Income by source') +
+        IncomeCharts.dataTable('Income by source',
+          ['Source', 'Total'],
+          srcs.map(s => [s.source, formatCurrency(s.total, currentCurrency)]));
+
+      document.querySelectorAll('#reportCategories .legend-item').forEach(btn => {
+        btn.addEventListener('click', () => filterByCategory(btn.dataset.cat));
+      });
+    }
+
     function renderSettings() {
       // Currency selector
       const cc = document.getElementById('settingsCurrencies');
@@ -348,12 +425,24 @@
         btn.className = `btn ${isActive ? 'btn-primary' : 'btn-secondary'} btn-sm`;
       });
 
-      // Storage info
+      // Storage info (Phase D: correct key iteration + 80% warning, PRD 3.1)
       let totalSize = 0;
-      for (let key in localStorage) {
-        totalSize += localStorage.getItem(key).length * 2; // approximate bytes
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        const v = localStorage.getItem(k);
+        totalSize += (k.length + (v ? v.length : 0)) * 2; // approx UTF-16 bytes
       }
-      document.getElementById('storageInfo').textContent = `Local storage usage: ~${(totalSize / 1024).toFixed(1)} KB of ~5,000 KB available`;
+      const quota = 5 * 1024 * 1024;
+      const pct = Math.min((totalSize / quota) * 100, 100);
+      const info = document.getElementById('storageInfo');
+      info.innerHTML = `Local storage usage: ~${(totalSize / 1024).toFixed(1)} KB of ~5,000 KB (${pct.toFixed(0)}%)` +
+        (pct >= 80 ? ' — <span class="storage-warn">over 80% full: export a backup, then delete old entries.</span>' : '');
+      if (pct >= 80 && !storageWarned) {
+        storageWarned = true;
+        showToast('Storage over 80% full — export a backup soon.', 'error');
+      } else if (pct < 80) {
+        storageWarned = false;
+      }
     }
 
     function setCurrency(currency) {
@@ -587,8 +676,9 @@
       currentTab = tab;
       document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
       document.querySelectorAll('.tab-section').forEach(s => s.classList.toggle('active', s.id === `tab-${tab}`));
-      if (tab === 'entries') renderEntries();
+      if (tab === 'entries') { entriesLimit = 100; renderEntries(); }
       if (tab === 'categories') renderCategories();
+      if (tab === 'reports') renderReports();
       if (tab === 'settings') renderSettings();
       if (tab === 'dashboard') renderDashboard();
     }
@@ -653,9 +743,10 @@
       });
 
       // Filters
-      document.getElementById('filterDateFrom').addEventListener('change', renderEntries);
-      document.getElementById('filterDateTo').addEventListener('change', renderEntries);
-      document.getElementById('filterCategory').addEventListener('change', renderEntries);
+      const resetLimitAndRender = () => { entriesLimit = 100; renderEntries(); };
+      document.getElementById('filterDateFrom').addEventListener('change', resetLimitAndRender);
+      document.getElementById('filterDateTo').addEventListener('change', resetLimitAndRender);
+      document.getElementById('filterCategory').addEventListener('change', resetLimitAndRender);
       document.getElementById('clearFilters').addEventListener('click', () => {
         document.getElementById('filterDateFrom').value = '';
         document.getElementById('filterDateTo').value = '';
@@ -667,6 +758,14 @@
         e.currentTarget.textContent = sortDesc ? '↓ Newest' : '↑ Oldest';
         renderEntries();
       });
+      document.getElementById('showMore').addEventListener('click', () => {
+        entriesLimit += 100;
+        renderEntries();
+      });
+
+      // Reports
+      document.getElementById('reportMonth').addEventListener('change', renderReports);
+      document.getElementById('trendRange').addEventListener('change', renderReports);
 
       // Theme toggle
       document.getElementById('themeToggle').addEventListener('click', () => {

@@ -4,12 +4,14 @@
  * js/app.js fails silently and the app still works (minus precaching).
  */
 
-const CACHE_NAME = 'income-tracker-v1';
+const CACHE_NAME = 'income-tracker-v2';
 const ASSETS = [
   './',
   './index.html',
   './css/tokens.css',
   './css/app.css',
+  './js/report.js',
+  './js/charts.js',
   './js/app.js'
 ];
 
